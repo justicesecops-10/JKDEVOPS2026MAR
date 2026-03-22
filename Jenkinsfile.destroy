@@ -1,0 +1,76 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Terraform DESTROY Pipeline
+//  Run this as a separate Jenkins job to tear down AWS infrastructure
+// ─────────────────────────────────────────────────────────────────────────────
+
+pipeline {
+
+  agent any
+
+  tools {
+    terraform 'Terraform-1.7'
+  }
+
+  environment {
+    AWS_REGION   = 'us-east-1'
+    PROJECT_NAME = 'devops-project'
+    TF_DIR       = 'terraform'
+    KEY_PAIR_NAME = 'your-aws-keypair-name'
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        git branch: 'main',
+            url: 'https://github.com/your-username/devops-project.git'
+      }
+    }
+
+    stage('Terraform: Init') {
+      environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+      }
+      steps {
+        dir("${TF_DIR}") {
+          sh 'terraform init'
+        }
+      }
+    }
+
+    stage('Confirm Destroy') {
+      steps {
+        input message: '⚠️  This will DESTROY all AWS resources. Are you sure?',
+              ok: 'Yes, Destroy Everything'
+      }
+    }
+
+    stage('Terraform: Destroy') {
+      environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+      }
+      steps {
+        dir("${TF_DIR}") {
+          sh '''
+            echo "=== Terraform Destroy ==="
+            terraform destroy -auto-approve \
+              -var="aws_region=${AWS_REGION}" \
+              -var="project_name=${PROJECT_NAME}" \
+              -var="key_pair_name=${KEY_PAIR_NAME}"
+
+            echo "✅ All resources destroyed"
+          '''
+        }
+      }
+    }
+
+  }
+
+  post {
+    success { echo "💥 Infrastructure successfully destroyed." }
+    failure { echo "❌ Destroy pipeline failed. Check state manually." }
+  }
+
+}
